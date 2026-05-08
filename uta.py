@@ -496,19 +496,27 @@ TOOL: bash("python3 main.py")"""
         return self.tools.read(path, offset, limit)
 
     def _parse_args(self, s: str):
-        """Parse comma-separated quoted arguments, preserving escape sequences."""
+        """Parse comma-separated quoted arguments, preserving escape sequences.
+        Supports single quotes, double quotes, and triple quotes."""
         args = []
         i = 0
         cur = ""
         in_q = None
+        triple = False
         while i < len(s):
             c = s[i]
             if in_q:
-                if c == in_q:
+                if triple and c == in_q and i+2 < len(s) and s[i+1] == in_q and s[i+2] == in_q:
                     args.append(cur)
                     cur = ""
                     in_q = None
-                elif c == '\\' and i+1 < len(s):
+                    triple = False
+                    i += 2
+                elif not triple and c == in_q:
+                    args.append(cur)
+                    cur = ""
+                    in_q = None
+                elif c == '\\' and i+1 < len(s) and not triple:
                     nxt = s[i+1]
                     if nxt in ('n', 't', 'r', '0', '"', "'", '\\'):
                         cur += '\\' + nxt
@@ -518,7 +526,13 @@ TOOL: bash("python3 main.py")"""
                 else:
                     cur += c
             elif c in ('"', "'"):
-                in_q = c
+                if i+2 < len(s) and s[i+1] == c and s[i+2] == c:
+                    in_q = c
+                    triple = True
+                    i += 2
+                else:
+                    in_q = c
+                    triple = False
             elif c == ',':
                 if cur.strip():
                     args.append(cur.strip())
@@ -531,13 +545,16 @@ TOOL: bash("python3 main.py")"""
             i += 1
         if cur.strip():
             args.append(cur.strip())
-        # Decode escape sequences
+        # Decode escape sequences (only if they exist)
         result = []
         for a in args:
-            try:
-                decoded = a.encode('utf-8').decode('unicode_escape')
-                result.append(decoded)
-            except:
+            if '\\' in a or '\\n' in a or '\\t' in a:
+                try:
+                    decoded = a.encode('utf-8').decode('unicode_escape')
+                    result.append(decoded)
+                except:
+                    result.append(a)
+            else:
                 result.append(a)
         return result
 
